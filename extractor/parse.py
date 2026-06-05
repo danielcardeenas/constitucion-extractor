@@ -108,6 +108,10 @@ def _strip_headers(page_text: str) -> str:
     return "\n".join(lines)
 
 
+# Versión del texto: "Últimas Reformas DOF 02-06-2026" (en la portada del PDF).
+VERSION_RE = re.compile(r"[ÚU]ltimas?\s+[Rr]eformas?\s+(?:publicadas\s+)?DOF\s+(\d{2})-(\d{2})-(\d{4})")
+
+
 def extract_clean_text(pdf_path: str) -> str:
     """Devuelve el texto completo del PDF sin encabezados de página."""
     parts = []
@@ -115,6 +119,14 @@ def extract_clean_text(pdf_path: str) -> str:
         for page in pdf.pages:
             parts.append(_strip_headers(page.extract_text() or ""))
     return "\n".join(parts)
+
+
+def version_date(pdf_path: str) -> date | None:
+    """Fecha de la última reforma incorporada al PDF = versión del snapshot."""
+    with pdfplumber.open(pdf_path) as pdf:
+        head = pdf.pages[0].extract_text() or ""
+    m = VERSION_RE.search(head)
+    return date(int(m.group(3)), int(m.group(2)), int(m.group(1))) if m else None
 
 
 def _articulado_text(text: str) -> str:
@@ -128,10 +140,12 @@ def parse(pdf_path: str) -> list[Article]:
     return parse_text(extract_clean_text(pdf_path))
 
 
-def parse_text(clean_text: str) -> list[Article]:
+def parse_text(clean_text: str, start: int = 1) -> list[Article]:
     """Segmenta texto ya limpio (sin encabezados) en artículos.
 
     Separado de `parse` para poder probarlo con texto sintético, sin PDF.
+    `start` es el número del primer artículo esperado (1 en el documento real;
+    útil en tests para segmentar un artículo suelto, p. ej. el 4o.).
     """
     text = _articulado_text(clean_text)
     lines = text.splitlines()
@@ -140,7 +154,7 @@ def parse_text(clean_text: str) -> list[Article]:
     current: Article | None = None
     cur_titulo = ""
     cur_capitulo = ""
-    expected = 1  # número de artículo esperado para validar la secuencia
+    expected = start  # número de artículo esperado para validar la secuencia
 
     def flush(art: Article | None) -> None:
         if art is not None:

@@ -17,7 +17,8 @@ import json
 from pathlib import Path
 
 from .normalize import normalize_body
-from .parse import Article, parse
+from .parse import Article, parse, version_date
+from .passages import all_passages
 from .segments import segment
 
 FUENTE = "Diario Oficial de la Federación — CPEUM, H. Cámara de Diputados"
@@ -43,7 +44,7 @@ def write_articles(arts: list[Article], data_repo: str) -> None:
         (art_dir / f"{art.key}.md").write_text(render_markdown(art), encoding="utf-8")
 
 
-def write_metadata(arts: list[Article], data_repo: str) -> None:
+def write_metadata(arts: list[Article], data_repo: str, version: str | None = None) -> None:
     """Capa 3: escribe el índice derivado en `metadata/` (no toca los .md)."""
     meta_dir = Path(data_repo) / "metadata"
     meta_dir.mkdir(parents=True, exist_ok=True)
@@ -88,6 +89,12 @@ def write_metadata(arts: list[Article], data_repo: str) -> None:
             json.dumps(segment(art), ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
         )
 
+    # Índice plano de pasajes, listo para ingesta de un RAG (un JSON por línea).
+    pasajes = all_passages(arts, version)
+    with (meta_dir / "pasajes.jsonl").open("w", encoding="utf-8") as fh:
+        for p in pasajes:
+            fh.write(json.dumps(p, ensure_ascii=False) + "\n")
+
 
 def build(pdf_path: str, data_repo: str, what: str = "all") -> list[Article]:
     """Parsea el PDF y materializa las capas pedidas. Devuelve los artículos.
@@ -98,5 +105,6 @@ def build(pdf_path: str, data_repo: str, what: str = "all") -> list[Article]:
     if what in ("all", "text"):
         write_articles(arts, data_repo)
     if what in ("all", "metadata"):
-        write_metadata(arts, data_repo)
+        version = version_date(pdf_path)
+        write_metadata(arts, data_repo, version=version.isoformat() if version else None)
     return arts

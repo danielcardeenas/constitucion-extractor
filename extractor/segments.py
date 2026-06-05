@@ -48,6 +48,7 @@ class Bloque:
     tipo: str                       # parrafo | fraccion | inciso | apartado | numeral
     marca: str                      # "", "I", "a", "A", "1"
     apartado: str                   # contexto de apartado ("A"), "" si no aplica
+    fraccion: str                   # contexto de fracción padre ("IV") para incisos/numerales
     ruta: str                       # migaja: "Artículo 2o. › Apartado A › Fracción I"
     texto: str
     reformas: list[Reforma] = field(default_factory=list)
@@ -158,6 +159,7 @@ def segment(art: Article) -> dict:
 
         bloques.append(Bloque(id=bid, tipo=tipo, marca=marca,
                               apartado=cur_apartado if tipo != "apartado" else "",
+                              fraccion=cur_fraccion if tipo in ("inciso", "numeral") else "",
                               ruta=ruta, texto=chunk))
 
     # Garantía de unicidad: en artículos con anidamiento profundo (p. ej. 41,
