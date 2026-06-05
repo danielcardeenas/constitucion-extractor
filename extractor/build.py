@@ -64,7 +64,7 @@ def write_metadata(arts: list[Article], data_repo: str, version: str | None = No
         }
         for art in arts
     ]
-    index_doc = {"fuente": FUENTE, "articulos": index}
+    index_doc = {"fuente": FUENTE, "version": version, "articulos": index}
     (meta_dir / "articulos.json").write_text(
         json.dumps(index_doc, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
