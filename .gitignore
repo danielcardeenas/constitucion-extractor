@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+# El PDF fuente se versiona aparte o se descarga; descomenta para ignorarlo:
+# *.pdf
