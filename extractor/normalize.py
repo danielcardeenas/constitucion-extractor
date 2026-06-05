@@ -11,11 +11,23 @@ from __future__ import annotations
 
 import re
 
-# Nota de reforma al pie: línea que describe la reforma y termina en fechas DOF.
-REFORM_NOTE_RE = re.compile(
+# Inicio de una nota de reforma al pie. Las notas describen el cambio y citan
+# una o más fechas DOF. Pueden ser compuestas ("... DOF 06-06-2019. Reformada y
+# recorrida (antes fracción VII) DOF 30-09-2024") y a veces tan largas que el
+# PDF las envuelve en varias líneas (ver _note_is_complete).
+REFORM_NOTE_START_RE = re.compile(
     r"^(?:Párrafo|Fracción|Inciso|Apartado|Artículo|Reforma|Adicion|Derogad|"
-    r"Reformad|Recorrid|Fe de|Adicionad)\b.*DOF\s+\d{2}-\d{2}-\d{4}",
+    r"Reformad|Recorrid|Denominación|Fe de|Adicionad)\b.*DOF\s+\d{2}-\d{2}-\d{4}",
 )
+REFORM_NOTE_RE = REFORM_NOTE_START_RE  # alias retrocompatible
+
+# Una nota está "completa" cuando termina en una fecha DOF (con posible "."/")"
+# final). Si no, la(s) línea(s) siguiente(s) son su continuación envuelta. Como
+# toda nota cierra siempre en una fecha, basta seguir uniendo líneas hasta que
+# la nota cierre en fecha (sin importar con qué palabra empiece la continuación).
+NOTE_COMPLETE_RE = re.compile(r"\d{2}-\d{2}-\d{4}[.)]?$")
+# Tope de seguridad: las notas envueltas reales ocupan 1–2 renglones extra.
+MAX_NOTE_CONT_LINES = 4
 
 # Marcadores de inicio de fracción / inciso / apartado:
 #   "I.", "XiV.", "a)", "1.", "A. " (apartado), "Bis"
@@ -28,11 +40,15 @@ SENTENCE_END_RE = re.compile(r"[.:;]$")
 
 
 def _is_reform_note(line: str) -> bool:
-    return bool(REFORM_NOTE_RE.match(line.strip()))
+    return bool(REFORM_NOTE_START_RE.match(line.strip()))
 
 
 def _is_struct_marker(line: str) -> bool:
     return bool(STRUCT_MARKER_RE.match(line.strip()))
+
+
+def _note_is_complete(note: str) -> bool:
+    return bool(NOTE_COMPLETE_RE.search(note.strip()))
 
 
 def normalize_body(body: str, heading_label: str) -> str:
@@ -58,24 +74,44 @@ def normalize_body(body: str, heading_label: str) -> str:
             blocks.append(" ".join(w.strip() for w in buf if w.strip()))
             buf.clear()
 
-    for line in lines:
-        s = line.strip()
+    i = 0
+    n = len(lines)
+    while i < n:
+        s = lines[i].strip()
         if not s:
             flush_buf()
+            i += 1
             continue
         if _is_reform_note(s):
             flush_buf()
-            blocks.append(f"_{s}_")          # anotación de reforma en cursiva
+            # Reensamblar notas envueltas: seguir uniendo líneas mientras la nota
+            # no cierre en una fecha y la siguiente línea sea su continuación.
+            note = s
+            j = i + 1
+            while (
+                j < n
+                and (j - i) <= MAX_NOTE_CONT_LINES
+                and not _note_is_complete(note)
+                and lines[j].strip()
+                and not _is_struct_marker(lines[j])
+                and not _is_reform_note(lines[j])
+            ):
+                note = f"{note} {lines[j].strip()}"
+                j += 1
+            blocks.append(f"_{note}_")        # anotación de reforma en cursiva
+            i = j
             continue
         if _is_struct_marker(s):
             flush_buf()
             buf.append(s)
+            i += 1
             continue
         # Continuación de párrafo, salvo que el bloque previo ya haya cerrado
         # oración (heurística para no pegar párrafos distintos).
         if buf and SENTENCE_END_RE.search(buf[-1]):
             flush_buf()
         buf.append(s)
+        i += 1
 
     flush_buf()
     return "\n\n".join(b for b in blocks if b).strip()

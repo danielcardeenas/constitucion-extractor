@@ -53,3 +53,30 @@ def test_normalizacion_extrae_reformas(arts):
     body = normalize_body(a1.body, a1.label)
     assert body.startswith("En los Estados Unidos Mexicanos")
     assert "_Artículo reformado DOF" in body  # nota de reforma en cursiva
+
+
+def test_ninguna_nota_se_filtra_al_cuerpo_en_todo_el_pdf(arts):
+    """Ningún párrafo del texto debe empezar con una fecha suelta: eso indicaría
+    que la cola de una nota envuelta (p. ej. art. 73) se filtró al cuerpo."""
+    import re
+    leak = re.compile(r"(?m)^(?:DOF\s+)?\d{2}-\d{2}-\d{4}")
+    culpables = [a.number for a in arts
+                 if leak.search(normalize_body(a.body, a.label))]
+    assert culpables == []
+
+
+def test_nota_larga_del_art_73_se_reensambla(arts):
+    """La nota con ~12 fechas del art. 73 debe quedar en una sola línea en cursiva."""
+    body = normalize_body(next(a for a in arts if a.number == 73).body, "")
+    nota = next((l for l in body.splitlines() if "06-09-1929" in l), "")
+    assert nota.startswith("_Fracción reformada DOF 06-09-1929")
+    assert nota.endswith("_")
+    assert nota.count("-") >= 24  # al menos 12 fechas (dd-mm-yyyy → 2 guiones c/u)
+
+
+def test_fechas_multifecha_se_capturan_completas(arts):
+    """Regresión del bug: las notas 'DOF d1, d2, d3' deben aportar TODAS sus fechas."""
+    a3 = next(a for a in arts if a.number == 3)
+    # El art. 3 tiene varias notas multi-fecha; debe superar holgadamente las
+    # fechas que se capturaban cuando solo se leía la primera de cada cláusula.
+    assert len(a3.reform_dates) >= 14

@@ -48,8 +48,22 @@ TRANSITORIOS_RE = re.compile(
     re.MULTILINE,
 )
 
-# Fechas de reforma dentro de las notas al pie: "DOF 06-06-2019".
-DOF_DATE_RE = re.compile(r"DOF\s+(\d{2})-(\d{2})-(\d{4})")
+# Fechas de reforma dentro de las notas al pie. Una cláusula DOF puede encadenar
+# varias fechas con coma: "DOF 04-12-2006, 10-06-2011". Capturamos la cláusula
+# completa y luego cada fecha, para no perder las encadenadas.
+DOF_CLAUSE_RE = re.compile(
+    r"DOF\s+(\d{2}-\d{2}-\d{4}(?:\s*,\s*\d{2}-\d{2}-\d{4})*)"
+)
+DATE_RE = re.compile(r"(\d{2})-(\d{2})-(\d{4})")
+
+
+def reform_dates_in(text: str) -> list[date]:
+    """Todas las fechas de reforma (DOF) presentes en `text`, únicas y ordenadas."""
+    dates: set[date] = set()
+    for clause in DOF_CLAUSE_RE.findall(text):
+        for d, mo, y in DATE_RE.findall(clause):
+            dates.add(date(int(y), int(mo), int(d)))
+    return sorted(dates)
 
 
 @dataclass
@@ -111,7 +125,15 @@ def _articulado_text(text: str) -> str:
 
 def parse(pdf_path: str) -> list[Article]:
     """Parsea el PDF y devuelve la lista de artículos en orden."""
-    text = _articulado_text(extract_clean_text(pdf_path))
+    return parse_text(extract_clean_text(pdf_path))
+
+
+def parse_text(clean_text: str) -> list[Article]:
+    """Segmenta texto ya limpio (sin encabezados) en artículos.
+
+    Separado de `parse` para poder probarlo con texto sintético, sin PDF.
+    """
+    text = _articulado_text(clean_text)
     lines = text.splitlines()
 
     articles: list[Article] = []
@@ -123,9 +145,7 @@ def parse(pdf_path: str) -> list[Article]:
     def flush(art: Article | None) -> None:
         if art is not None:
             art.body = art.body.strip()
-            art.reform_dates = sorted(
-                {date(int(y), int(mo), int(d)) for d, mo, y in DOF_DATE_RE.findall(art.body)}
-            )
+            art.reform_dates = reform_dates_in(art.body)
             articles.append(art)
 
     for raw in lines:
