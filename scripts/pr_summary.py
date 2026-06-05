@@ -33,6 +33,11 @@ def changed_articles(repo: Path) -> list[str]:
     return sorted(set(claves))
 
 
+def has_changes(repo: Path, subdir: str) -> bool:
+    """True si hay cambios sin commitear bajo `subdir`."""
+    return bool(_git(repo, "status", "--porcelain", "--", subdir).strip())
+
+
 def main(repo_arg: str) -> int:
     repo = Path(repo_arg)
     claves = changed_articles(repo)
@@ -59,11 +64,17 @@ def main(repo_arg: str) -> int:
     print("### Antes de aprobar")
     print("- Revisa el diff de `articulos/` — debe corresponder a una reforma real del DOF.")
     print("- Confirma la fecha contra el [DOF](https://www.dof.gob.mx/).\n")
-    print("### Después de aprobar y mergear")
-    print("Regenera el enriquecimiento (solo se re-generan los artículos que cambiaron):")
-    print("```bash")
-    print("python -m extractor enriquecer --out .")
-    print("```")
+
+    if has_changes(repo, "metadata/generado"):
+        print("### Enriquecimiento")
+        print("El enriquecimiento (búsqueda) de los artículos cambiados **ya se "
+              "regeneró** y está incluido en este PR. Revísalo en `metadata/generado/`.")
+    else:
+        print("### Después de aprobar y mergear")
+        print("Regenera el enriquecimiento (solo se re-generan los artículos que cambiaron):")
+        print("```bash")
+        print("python -m extractor enriquecer --out .")
+        print("```")
     print("\n_PR generado por el workflow `vigilar-cpeum`._")
     return 0
 
