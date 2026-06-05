@@ -1,10 +1,15 @@
-"""Escribe los artículos parseados como archivos Markdown en el repo de datos.
+"""Materializa los artículos en el repo de datos, en DOS capas independientes.
 
-Diseño orientado a `git diff` limpio:
-- Un archivo por artículo: `articulos/004.md`.
-- Frontmatter YAML con metadata estable (número, título, capítulo, reformas).
-- Cuerpo en párrafos normalizados.
-- Un índice `metadata/articulos.json` y un `metadata/reformas.json` agregados.
+Arquitectura (ver README): el texto es la fuente de verdad y git es el detector
+de cambios. La metadata derivada (fechas de reforma, título, capítulo) es
+best-effort y vive aparte, para que mejorarla nunca ensucie el historial del
+texto.
+
+  Capa 1 — TEXTO        articulos/NNN.md   solo encabezado + cuerpo fiel
+  Capa 3 — METADATA     metadata/*.json    índice derivado, regenerable
+
+`write_articles` y `write_metadata` son independientes: se puede regenerar el
+índice sin tocar un solo .md.
 """
 from __future__ import annotations
 
@@ -17,54 +22,49 @@ from .parse import Article, parse
 FUENTE = "Diario Oficial de la Federación — CPEUM, H. Cámara de Diputados"
 
 
-def _yaml_list(dates) -> str:
-    return "[" + ", ".join(d.isoformat() for d in dates) + "]"
-
-
 def render_markdown(art: Article) -> str:
+    """Texto del artículo: encabezado + cuerpo en párrafos. Sin metadata.
+
+    Cualquier cambio aquí proviene de un cambio en la ley; git lo detecta.
+    """
     body = normalize_body(art.body, art.label)
-    fm = [
-        "---",
-        f"articulo: {art.number}",
-        f'clave: "{art.key}"',
-        f'titulo: "{art.titulo}"' if art.titulo else 'titulo: ""',
-        f'capitulo: "{art.capitulo}"' if art.capitulo else 'capitulo: ""',
-        f"ultima_reforma: {art.last_reform.isoformat() if art.last_reform else 'null'}",
-        f"reformas: {_yaml_list(art.reform_dates)}",
-        f'fuente: "{FUENTE}"',
-        "---",
-    ]
-    return "\n".join(fm) + f"\n\n# {art.label}\n\n{body}\n"
+    return f"# {art.label}\n\n{body}\n"
 
 
-def build(pdf_path: str, data_repo: str) -> list[Article]:
-    """Parsea el PDF y materializa los archivos en `data_repo`. Devuelve los artículos."""
-    arts = parse(pdf_path)
-    root = Path(data_repo)
-    art_dir = root / "articulos"
-    meta_dir = root / "metadata"
+def write_articles(arts: list[Article], data_repo: str) -> None:
+    """Capa 1: escribe solo los archivos de texto `articulos/NNN.md`."""
+    art_dir = Path(data_repo) / "articulos"
     art_dir.mkdir(parents=True, exist_ok=True)
-    meta_dir.mkdir(parents=True, exist_ok=True)
-
-    # Limpiar artículos previos para que las supresiones se reflejen en git.
+    # Limpiar previos para que las supresiones se reflejen en git.
     for old in art_dir.glob("*.md"):
         old.unlink()
-
-    index = []
     for art in arts:
         (art_dir / f"{art.key}.md").write_text(render_markdown(art), encoding="utf-8")
-        index.append({
+
+
+def write_metadata(arts: list[Article], data_repo: str) -> None:
+    """Capa 3: escribe el índice derivado en `metadata/` (no toca los .md)."""
+    meta_dir = Path(data_repo) / "metadata"
+    meta_dir.mkdir(parents=True, exist_ok=True)
+
+    index = [
+        {
             "clave": art.key,
             "articulo": art.number,
+            "sufijo": art.suffix,
+            "etiqueta": art.label,
             "titulo": art.titulo,
             "capitulo": art.capitulo,
             "ultima_reforma": art.last_reform.isoformat() if art.last_reform else None,
             "num_reformas": len(art.reform_dates),
+            "reformas": [d.isoformat() for d in art.reform_dates],
             "archivo": f"articulos/{art.key}.md",
-        })
-
+        }
+        for art in arts
+    ]
+    index_doc = {"fuente": FUENTE, "articulos": index}
     (meta_dir / "articulos.json").write_text(
-        json.dumps(index, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        json.dumps(index_doc, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
 
     # Mapa reforma → artículos afectados, ordenado por fecha.
@@ -76,4 +76,16 @@ def build(pdf_path: str, data_repo: str) -> list[Article]:
     (meta_dir / "reformas.json").write_text(
         json.dumps(reformas_sorted, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
+
+
+def build(pdf_path: str, data_repo: str, what: str = "all") -> list[Article]:
+    """Parsea el PDF y materializa las capas pedidas. Devuelve los artículos.
+
+    what: "all" (texto + metadata) | "text" (solo capa 1) | "metadata" (solo capa 3).
+    """
+    arts = parse(pdf_path)
+    if what in ("all", "text"):
+        write_articles(arts, data_repo)
+    if what in ("all", "metadata"):
+        write_metadata(arts, data_repo)
     return arts

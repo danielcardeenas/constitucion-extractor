@@ -17,9 +17,15 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="extractor", description="Extractor de la CPEUM a Markdown")
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    b = sub.add_parser("build", help="Genera los Markdown en el repo de datos")
+    b = sub.add_parser("build", help="Genera el texto (capa 1) y la metadata (capa 3)")
     b.add_argument("--pdf", default="CPEUM.pdf")
     b.add_argument("--out", required=True, help="Ruta al repo de datos (constitucion-mexicana)")
+    b.add_argument("--only", choices=["all", "text", "metadata"], default="all",
+                   help="Qué capa escribir: all (default), text, metadata")
+
+    idx = sub.add_parser("index", help="Regenera SOLO la metadata derivada (no toca los .md)")
+    idx.add_argument("--pdf", default="CPEUM.pdf")
+    idx.add_argument("--out", required=True)
 
     s = sub.add_parser("stats", help="Imprime estadísticas del parseo (no escribe)")
     s.add_argument("--pdf", default="CPEUM.pdf")
@@ -27,8 +33,16 @@ def main(argv: list[str] | None = None) -> int:
     args = p.parse_args(argv)
 
     if args.cmd == "build":
-        arts = build(args.pdf, args.out)
-        print(f"✓ {len(arts)} artículos escritos en {args.out}/articulos/")
+        arts = build(args.pdf, args.out, what=args.only)
+        if args.only == "metadata":
+            print(f"✓ metadata de {len(arts)} artículos en {args.out}/metadata/")
+        else:
+            print(f"✓ {len(arts)} artículos escritos en {args.out}/articulos/")
+        return 0
+
+    if args.cmd == "index":
+        arts = build(args.pdf, args.out, what="metadata")
+        print(f"✓ metadata regenerada para {len(arts)} artículos (sin tocar los .md)")
         return 0
 
     if args.cmd == "stats":

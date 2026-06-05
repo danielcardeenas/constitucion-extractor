@@ -90,8 +90,9 @@ class TestFormasDeNotas:
     ])
     def test_ninguna_nota_se_filtra_al_cuerpo(self, nota):
         md = render(f"Texto base del artículo.\n{nota}")
-        body = md.split("---", 2)[-1]
-        assert not LEAKED_DATE_LINE.search(body), f"fuga de fecha con: {nota}"
+        # El texto del artículo nunca debe tener una línea que empiece con fecha.
+        cuerpo = md.split("\n", 2)[-1]  # quitar el encabezado "# Artículo ..."
+        assert not LEAKED_DATE_LINE.search(cuerpo), f"fuga de fecha con: {nota}"
         assert f"_{nota}_" in md
 
 
@@ -135,6 +136,8 @@ class TestUpdatesDiff:
             "Tercer párrafo que tampoco cambia.")
 
     def test_reforma_de_un_parrafo_solo_toca_ese_parrafo(self):
+        # El diff del TEXTO (capa 1) debe ser localizado: solo el párrafo
+        # reformado y su nota; los demás párrafos intactos.
         before = render(self.BASE)
         after = render(self.BASE.replace(
             "derecho a la salud.\nPárrafo adicionado DOF 06-06-2019",
@@ -142,21 +145,28 @@ class TestUpdatesDiff:
             "Párrafo adicionado DOF 06-06-2019. Reformado DOF 30-09-2024",
         ))
         added, removed = changed_lines(before, after)
-        # El párrafo reformado y su nota cambian; el resto no.
         assert any("al deporte" in l for l in added)
         assert all("Primer párrafo que no cambia" not in l for l in added + removed)
         assert all("Tercer párrafo que tampoco" not in l for l in added + removed)
 
-    def test_reforma_actualiza_frontmatter(self):
-        before = render(self.BASE)
-        after = render(self.BASE.replace(
+    def test_reforma_actualiza_metadata_derivada(self):
+        # La metadata (capa 3) se deriva del texto, no se guarda en el .md.
+        before = article(self.BASE)
+        after = article(self.BASE.replace(
             "Párrafo adicionado DOF 06-06-2019",
             "Párrafo adicionado DOF 06-06-2019. Reformado DOF 30-09-2024",
         ))
-        assert "ultima_reforma: 2019-06-06" in before
-        assert "ultima_reforma: 2024-09-30" in after
-        assert "2024-09-30" not in before
-        assert "reformas: [2019-06-06, 2024-09-30]" in after
+        assert before.last_reform.isoformat() == "2019-06-06"
+        assert after.last_reform.isoformat() == "2024-09-30"
+        assert [d.isoformat() for d in after.reform_dates] == ["2019-06-06", "2024-09-30"]
+
+    def test_el_texto_no_contiene_metadata_derivada(self):
+        # Garantía de la arquitectura: mejorar la extracción de fechas NO debe
+        # poder cambiar un .md. El texto no lleva frontmatter de fechas.
+        md = render(self.BASE)
+        assert "ultima_reforma" not in md
+        assert "reformas:" not in md
+        assert md.startswith("# Artículo")
 
     def test_agregar_una_fraccion_inserta_limpio(self):
         before = render("I. Primera fracción.\nII. Segunda fracción.")
