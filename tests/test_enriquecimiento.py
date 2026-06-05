@@ -107,6 +107,16 @@ def test_enrich_article_con_llm_simulado():
 # Caché en run_enrichment: no regenera lo que no cambió                       #
 # --------------------------------------------------------------------------- #
 
+def test_caller_for_rechaza_proveedor_desconocido():
+    with pytest.raises(ValueError):
+        enrich.caller_for("gemini", "x")
+
+
+def test_proveedores_tienen_modelo_por_defecto():
+    assert "anthropic" in enrich.DEFAULT_MODELS
+    assert "openai" in enrich.DEFAULT_MODELS
+
+
 def test_run_enrichment_usa_cache(tmp_path):
     arts = [art()]
     llamadas = {"n": 0}

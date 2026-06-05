@@ -31,8 +31,10 @@ def main(argv: list[str] | None = None) -> int:
                        help="Genera la capa de enriquecimiento por LLM (metadata/generado/)")
     e.add_argument("--pdf", default="CPEUM.pdf")
     e.add_argument("--out", required=True)
-    e.add_argument("--modelo", default="claude-sonnet-4-6",
-                   help="Modelo de Anthropic a usar")
+    e.add_argument("--proveedor", choices=["anthropic", "openai"], default="openai",
+                   help="Proveedor del LLM (default: openai)")
+    e.add_argument("--modelo", default=None,
+                   help="Modelo a usar (default según proveedor)")
     e.add_argument("--force", action="store_true",
                    help="Regenerar todos, ignorando la caché por hash")
 
@@ -55,11 +57,12 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.cmd == "enriquecer":
-        from .enrich import anthropic_caller, run_enrichment
+        from .enrich import DEFAULT_MODELS, caller_for, run_enrichment
+        modelo = args.modelo or DEFAULT_MODELS[args.proveedor]
         arts = parse(args.pdf)
-        call = anthropic_caller(args.modelo)
-        stats = run_enrichment(arts, args.out, call, args.modelo, force=args.force)
-        print(f"✓ enriquecimiento: {stats['generados']} generados, "
+        call = caller_for(args.proveedor, modelo)
+        stats = run_enrichment(arts, args.out, call, f"{args.proveedor}:{modelo}", force=args.force)
+        print(f"✓ enriquecimiento ({args.proveedor}:{modelo}): {stats['generados']} generados, "
               f"{stats['omitidos']} omitidos (texto sin cambios)")
         return 0
 

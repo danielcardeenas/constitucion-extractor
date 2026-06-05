@@ -1,3 +1,5 @@
 pdfplumber>=0.11
-# Solo para `extractor enriquecer` (capa generada por LLM). Opcional:
-# anthropic>=0.40
+# Solo para `extractor enriquecer` (capa generada por LLM). Opcional, instala
+# el del proveedor que uses:
+# openai>=1.40       # --proveedor openai (default, más económico)
+# anthropic>=0.40    # --proveedor anthropic

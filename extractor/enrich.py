@@ -141,6 +141,13 @@ Cada archivo trae un bloque `_generado` con el modelo, el esquema y un
 """
 
 
+# Modelo por defecto de cada proveedor (se puede sobreescribir con --modelo).
+DEFAULT_MODELS = {
+    "anthropic": "claude-sonnet-4-6",
+    "openai": "gpt-4o-mini",          # económico; bueno para esta tarea de metadatos
+}
+
+
 def anthropic_caller(model: str):
     """Devuelve un `call(prompt)->str` que usa la API de Anthropic.
 
@@ -159,6 +166,37 @@ def anthropic_caller(model: str):
         return "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
 
     return call
+
+
+def openai_caller(model: str):
+    """Devuelve un `call(prompt)->str` que usa la API de OpenAI.
+
+    Requiere `pip install openai` y la variable OPENAI_API_KEY. Usa el modo
+    JSON nativo (el prompt ya pide 'un objeto JSON').
+    """
+    from openai import OpenAI  # import perezoso
+
+    client = OpenAI()
+
+    def call(prompt: str) -> str:
+        resp = client.chat.completions.create(
+            model=model,
+            max_tokens=1500,
+            response_format={"type": "json_object"},
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return resp.choices[0].message.content or ""
+
+    return call
+
+
+def caller_for(proveedor: str, model: str):
+    """Selecciona el caller según el proveedor ('anthropic' | 'openai')."""
+    if proveedor == "anthropic":
+        return anthropic_caller(model)
+    if proveedor == "openai":
+        return openai_caller(model)
+    raise ValueError(f"proveedor desconocido: {proveedor!r} (usa 'anthropic' u 'openai')")
 
 
 def run_enrichment(arts, data_repo, call, modelo: str, force: bool = False) -> dict:
