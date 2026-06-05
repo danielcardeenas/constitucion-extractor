@@ -18,6 +18,7 @@ from pathlib import Path
 
 from .normalize import normalize_body
 from .parse import Article, parse
+from .segments import segment
 
 FUENTE = "Diario Oficial de la Federación — CPEUM, H. Cámara de Diputados"
 
@@ -76,6 +77,16 @@ def write_metadata(arts: list[Article], data_repo: str) -> None:
     (meta_dir / "reformas.json").write_text(
         json.dumps(reformas_sorted, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
+
+    # Descomposición en bloques con la reforma de cada uno ya enlazada (para LLM).
+    seg_dir = meta_dir / "segmentos"
+    seg_dir.mkdir(parents=True, exist_ok=True)
+    for old in seg_dir.glob("*.json"):
+        old.unlink()
+    for art in arts:
+        (seg_dir / f"{art.key}.json").write_text(
+            json.dumps(segment(art), ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
 
 
 def build(pdf_path: str, data_repo: str, what: str = "all") -> list[Article]:

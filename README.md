@@ -38,8 +38,13 @@ CPEUM.pdf ─> parse.py ─> [Article] ─┬─> normalize.py ─> write_articl
 2. **`normalize.py`** re-une los saltos de línea "visuales" del PDF en párrafos
    y deja las notas de reforma en *cursiva* (reensamblando las que el PDF parte
    en varias líneas), para que un `git diff` muestre solo el párrafo cambiado.
-3. **`build.py`** — `write_articles` escribe el texto puro (capa 1);
-   `write_metadata` escribe el índice derivado en `metadata/` (capa 3).
+3. **`segments.py`** (capa 3) descompone cada artículo en bloques (párrafo,
+   fracción, inciso, apartado) y **enlaza cada nota de reforma a su bloque** por
+   alcance, para que un LLM no infiera la asociación. Las notas de alcance
+   "Artículo" van a `reformas_articulo` (campo aparte). Escribe
+   `metadata/segmentos/NNN.json`.
+4. **`build.py`** — `write_articles` escribe el texto puro (capa 1);
+   `write_metadata` escribe el índice y los segmentos en `metadata/` (capa 3).
 
 ## Uso
 
