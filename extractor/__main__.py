@@ -38,10 +38,25 @@ def main(argv: list[str] | None = None) -> int:
     e.add_argument("--force", action="store_true",
                    help="Regenerar todos, ignorando la caché por hash")
 
+    v = sub.add_parser("validar",
+                       help="Verifica invariantes del repo de datos (gate de CI). Sale !=0 si falla")
+    v.add_argument("--out", required=True, help="Ruta al repo de datos")
+    v.add_argument("--base", default=None,
+                   help="Ref git base para checks de diff (p.ej. origin/main)")
+    v.add_argument("--max-cambios", type=int, default=20,
+                   help="Máximo de artículos que puede tocar una reforma legítima")
+
     s = sub.add_parser("stats", help="Imprime estadísticas del parseo (no escribe)")
     s.add_argument("--pdf", default="CPEUM.pdf")
 
     args = p.parse_args(argv)
+
+    if args.cmd == "validar":
+        from .validate import format_report, validate
+        ok, checks = validate(args.out, base=args.base, max_changes=args.max_cambios)
+        print(format_report(checks))
+        print("\n" + ("✅ Invariantes OK" if ok else "❌ Invariantes ROTOS — no mergear"))
+        return 0 if ok else 1
 
     if args.cmd == "build":
         arts = build(args.pdf, args.out, what=args.only)
