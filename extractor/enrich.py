@@ -199,11 +199,16 @@ def caller_for(proveedor: str, model: str):
     raise ValueError(f"proveedor desconocido: {proveedor!r} (usa 'anthropic' u 'openai')")
 
 
-def run_enrichment(arts, data_repo, call, modelo: str, force: bool = False) -> dict:
+def run_enrichment(arts, data_repo, call, modelo: str, force: bool = False,
+                   reintentos: int = 2) -> dict:
     """Genera/actualiza el enriquecimiento de los artículos que lo necesitan.
 
-    Devuelve stats: {"generados": n, "omitidos": m}. Usa caché por hash: omite
-    los artículos cuyo texto no cambió desde la última generación.
+    Best-effort y resiliente: si el LLM devuelve algo inválido para un artículo,
+    se reintenta `reintentos` veces y, si aún falla, se SALTA ese artículo sin
+    abortar el batch (esta capa nunca es crítica). Usa caché por hash: omite los
+    artículos cuyo texto no cambió desde la última generación.
+
+    Devuelve stats: {"generados", "omitidos", "fallidos", "errores"}.
     """
     from pathlib import Path
 
@@ -211,14 +216,29 @@ def run_enrichment(arts, data_repo, call, modelo: str, force: bool = False) -> d
     gen_dir.mkdir(parents=True, exist_ok=True)
     (gen_dir / "README.md").write_text(MANIFEST, encoding="utf-8")
 
-    generados = omitidos = 0
+    generados = omitidos = fallidos = 0
+    errores: list[str] = []
     for art in arts:
         path = gen_dir / f"{art.key}.json"
         existing = json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
         if not force and not needs_refresh(art, existing):
             omitidos += 1
             continue
-        record = enrich_article(art, call, modelo)
+
+        record = None
+        ultimo_error = None
+        for _ in range(max(1, reintentos)):
+            try:
+                record = enrich_article(art, call, modelo)
+                break
+            except Exception as e:               # LLM no-determinista: reintenta
+                ultimo_error = e
+        if record is None:
+            fallidos += 1
+            errores.append(f"{art.key}: {ultimo_error}")
+            continue
+
         path.write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         generados += 1
-    return {"generados": generados, "omitidos": omitidos}
+    return {"generados": generados, "omitidos": omitidos,
+            "fallidos": fallidos, "errores": errores}

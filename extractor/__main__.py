@@ -63,7 +63,9 @@ def main(argv: list[str] | None = None) -> int:
         call = caller_for(args.proveedor, modelo)
         stats = run_enrichment(arts, args.out, call, f"{args.proveedor}:{modelo}", force=args.force)
         print(f"✓ enriquecimiento ({args.proveedor}:{modelo}): {stats['generados']} generados, "
-              f"{stats['omitidos']} omitidos (texto sin cambios)")
+              f"{stats['omitidos']} omitidos, {stats['fallidos']} fallidos")
+        for err in stats["errores"]:
+            print(f"  ⚠ {err}")
         return 0
 
     if args.cmd == "stats":

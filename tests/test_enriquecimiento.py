@@ -126,12 +126,30 @@ def test_run_enrichment_usa_cache(tmp_path):
         return json.dumps(VALIDO)
 
     s1 = enrich.run_enrichment(arts, str(tmp_path), call, "modelo-x")
-    assert s1 == {"generados": 1, "omitidos": 0}
+    assert (s1["generados"], s1["omitidos"], s1["fallidos"]) == (1, 0, 0)
     # Segunda corrida: el texto no cambió → se omite, sin nueva llamada al LLM.
     s2 = enrich.run_enrichment(arts, str(tmp_path), call, "modelo-x")
-    assert s2 == {"generados": 0, "omitidos": 1}
+    assert (s2["generados"], s2["omitidos"], s2["fallidos"]) == (0, 1, 0)
     assert llamadas["n"] == 1                       # el LLM se llamó una sola vez
     # Con --force sí regenera.
     s3 = enrich.run_enrichment(arts, str(tmp_path), call, "modelo-x", force=True)
-    assert s3 == {"generados": 1, "omitidos": 0}
+    assert (s3["generados"], s3["omitidos"], s3["fallidos"]) == (1, 0, 0)
     assert llamadas["n"] == 2
+
+
+def test_un_articulo_que_falla_no_tumba_el_batch(tmp_path):
+    # Dos artículos; el LLM devuelve algo inválido para uno → se salta, el otro sí.
+    arts = [art("Texto uno."), art("Texto dos.")]
+    arts[1].number = 2                              # distinto id para no chocar
+    n = {"i": 0}
+
+    def call(prompt):
+        n["i"] += 1
+        if "Texto dos" in prompt:
+            return json.dumps({**VALIDO, "temas": []})   # inválido siempre
+        return json.dumps(VALIDO)
+
+    stats = enrich.run_enrichment(arts, str(tmp_path), call, "modelo-x", reintentos=2)
+    assert stats["generados"] == 1
+    assert stats["fallidos"] == 1
+    assert any("002" in e for e in stats["errores"])
