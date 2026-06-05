@@ -23,6 +23,12 @@ y git sigue viendo el cambio. Regla de oro: **la capa 3 nunca toca los archivos
 de la capa 1.** Por eso `write_articles` (texto) y `write_metadata` (índice) son
 independientes, y existe `index` para regenerar solo la metadata.
 
+Hay además una **capa GENERADA** (best-effort, no canónica) en
+`metadata/generado/`: enriquecimiento por LLM (temas, términos coloquiales,
+preguntas) para mejorar el *recall* del RAG. Es **solo ayuda de búsqueda, nunca
+fuente de cita**; está cuarentenada, se genera con `extractor enriquecer` (API
+de Anthropic) y se regenera por hash solo cuando cambia el texto del artículo.
+
 ## Cómo funciona
 
 ```

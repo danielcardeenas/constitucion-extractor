@@ -1,1 +1,3 @@
 pdfplumber>=0.11
+# Solo para `extractor enriquecer` (capa generada por LLM). Opcional:
+# anthropic>=0.40

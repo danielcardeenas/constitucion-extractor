@@ -27,6 +27,15 @@ def main(argv: list[str] | None = None) -> int:
     idx.add_argument("--pdf", default="CPEUM.pdf")
     idx.add_argument("--out", required=True)
 
+    e = sub.add_parser("enriquecer",
+                       help="Genera la capa de enriquecimiento por LLM (metadata/generado/)")
+    e.add_argument("--pdf", default="CPEUM.pdf")
+    e.add_argument("--out", required=True)
+    e.add_argument("--modelo", default="claude-sonnet-4-6",
+                   help="Modelo de Anthropic a usar")
+    e.add_argument("--force", action="store_true",
+                   help="Regenerar todos, ignorando la caché por hash")
+
     s = sub.add_parser("stats", help="Imprime estadísticas del parseo (no escribe)")
     s.add_argument("--pdf", default="CPEUM.pdf")
 
@@ -43,6 +52,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "index":
         arts = build(args.pdf, args.out, what="metadata")
         print(f"✓ metadata regenerada para {len(arts)} artículos (sin tocar los .md)")
+        return 0
+
+    if args.cmd == "enriquecer":
+        from .enrich import anthropic_caller, run_enrichment
+        arts = parse(args.pdf)
+        call = anthropic_caller(args.modelo)
+        stats = run_enrichment(arts, args.out, call, args.modelo, force=args.force)
+        print(f"✓ enriquecimiento: {stats['generados']} generados, "
+              f"{stats['omitidos']} omitidos (texto sin cambios)")
         return 0
 
     if args.cmd == "stats":
