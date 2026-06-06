@@ -44,7 +44,9 @@ def write_articles(arts: list[Article], data_repo: str) -> None:
         (art_dir / f"{art.key}.md").write_text(render_markdown(art), encoding="utf-8")
 
 
-def write_metadata(arts: list[Article], data_repo: str, version: str | None = None) -> None:
+def write_metadata(
+    arts: list[Article], data_repo: str, version: str | None = None, pdf_path: str | None = None
+) -> None:
     """Capa 3: escribe el índice derivado en `metadata/` (no toca los .md)."""
     meta_dir = Path(data_repo) / "metadata"
     meta_dir.mkdir(parents=True, exist_ok=True)
@@ -91,6 +93,10 @@ def write_metadata(arts: list[Article], data_repo: str, version: str | None = No
 
     # Índice plano de pasajes, listo para ingesta de un RAG (un JSON por línea).
     pasajes = all_passages(arts, version)
+    # Coordenadas en el PDF (página + rects de resaltado), best-effort.
+    if pdf_path:
+        from .locate import annotate
+        annotate(pasajes, pdf_path)
     with (meta_dir / "pasajes.jsonl").open("w", encoding="utf-8") as fh:
         for p in pasajes:
             fh.write(json.dumps(p, ensure_ascii=False) + "\n")
@@ -106,5 +112,7 @@ def build(pdf_path: str, data_repo: str, what: str = "all") -> list[Article]:
         write_articles(arts, data_repo)
     if what in ("all", "metadata"):
         version = version_date(pdf_path)
-        write_metadata(arts, data_repo, version=version.isoformat() if version else None)
+        write_metadata(
+            arts, data_repo, version=version.isoformat() if version else None, pdf_path=pdf_path
+        )
     return arts
