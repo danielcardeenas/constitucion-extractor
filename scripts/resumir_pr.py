@@ -48,22 +48,35 @@ def diff_articulos(repo: Path, base: str) -> list[tuple[str, str]]:
     return out
 
 
-def build_prompt(diffs: list[tuple[str, str]]) -> str:
+def build_prompt(diffs: list[tuple[str, str]], doc: str = "la Constitución") -> str:
     bloques = [f"[Artículo {clave}]\n{diff}" for clave, diff in diffs]
     cambios = "\n\n".join(bloques)
     return (
-        "Eres un asistente que ayuda a revisar cambios al texto de la Constitución "
-        "mexicana en un Pull Request. Abajo está el DIFF (formato git: líneas que "
-        "empiezan con '-' se quitaron, con '+' se agregaron) de cada artículo que "
-        "cambió.\n\n"
+        f"Eres un asistente que ayuda a revisar cambios al texto de {doc} en un "
+        "Pull Request. Abajo está el DIFF (formato git: líneas que empiezan con "
+        "'-' se quitaron, con '+' se agregaron) de cada artículo que cambió.\n\n"
         "Tu tarea:\n"
         "1. Resume en lenguaje llano y breve QUÉ cambió en cada artículo (1-2 líneas).\n"
         "2. ⚠️ IMPORTANTE: si algún cambio parece un ERROR DE EXTRACCIÓN o corrupción "
         "(texto cortado, caracteres raros, pérdida de contenido, encabezados mezclados) "
         "en vez de una reforma legal coherente, márcalo con '⚠️ REVISAR' y explica por qué.\n\n"
-        "Responde en Markdown, conciso. No inventes; básate solo en el diff dado.\n\n"
+        "Responde en Markdown, conciso. NO agregues un título de primer nivel (el "
+        "comentario ya lleva encabezado); empieza directo con cada artículo. No "
+        "inventes; básate solo en el diff dado.\n\n"
         f"DIFFS:\n{cambios}"
     )
+
+
+def _doc_name(perfil_name: str | None) -> str:
+    """Nombre del documento para el prompt (p.ej. 'la Constitución Política del
+    Estado de Jalisco'). Si no se da perfil o no se puede importar, genérico."""
+    if not perfil_name:
+        return "la Constitución"
+    try:
+        from extractor.fuentes import perfil_por_nombre
+        return perfil_por_nombre(perfil_name).nombre
+    except Exception:
+        return "la Constitución"
 
 
 def summarize(prompt: str, model: str) -> str:
@@ -75,13 +88,14 @@ def summarize(prompt: str, model: str) -> str:
     return resp.choices[0].message.content or ""
 
 
-def main(repo_arg: str, base: str, model: str = "gpt-4o-mini") -> int:
+def main(repo_arg: str, base: str, perfil: str | None = None,
+         model: str = "gpt-4o-mini") -> int:
     repo = Path(repo_arg)
     diffs = diff_articulos(repo, base)
     if not diffs:
         print("_No hubo cambios de texto en artículos._")
         return 0
-    cuerpo = summarize(build_prompt(diffs), model)
+    cuerpo = summarize(build_prompt(diffs, _doc_name(perfil)), model)
     print("## 🤖 Resumen asistido del cambio\n")
     print(cuerpo)
     print("\n---\n> Generado por IA como **apoyo de revisión** (no es un gate ni "
@@ -91,6 +105,7 @@ def main(repo_arg: str, base: str, model: str = "gpt-4o-mini") -> int:
 
 if __name__ == "__main__":
     if len(sys.argv) < 3:
-        print("uso: resumir_pr.py <repo-datos> <base-ref> [modelo]", file=sys.stderr)
+        print("uso: resumir_pr.py <repo-datos> <base-ref> [perfil] [modelo]",
+              file=sys.stderr)
         sys.exit(2)
-    sys.exit(main(*sys.argv[1:4]))
+    sys.exit(main(*sys.argv[1:5]))
