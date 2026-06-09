@@ -29,13 +29,18 @@ def diff_articulos(repo: Path, base: str) -> list[tuple[str, str]]:
     Usa el diff de git (líneas '-' quitadas, '+' agregadas): enfocado en EL
     cambio y mucho más eficiente en tokens que mandar el artículo completo.
     """
-    status = _git(repo, "diff", "--name-only", base, "--", "articulos")
+    # `--relative`: emite e interpreta rutas relativas al subdir de `repo`. Sin
+    # él, en el layout anidado de los estados (repo = <estado>/constitucion, que
+    # NO es la raíz del repo git) `--name-only` devolvería rutas desde la raíz y
+    # el segundo `diff` las buscaría bajo el subdir → diff vacío. En el federal
+    # (repo = raíz) es no-op.
+    status = _git(repo, "diff", "--relative", "--name-only", base, "--", "articulos")
     out = []
     for path in status.splitlines():
         if not path.endswith(".md"):
             continue
         clave = Path(path).stem
-        diff = _git(repo, "diff", base, "--", path)
+        diff = _git(repo, "diff", "--relative", base, "--", path)
         # quitar el encabezado de git (diff --git, index, +++/---); dejar los hunks
         cuerpo = "\n".join(l for l in diff.splitlines()
                            if not l.startswith(("diff --git", "index ", "--- ", "+++ ")))
