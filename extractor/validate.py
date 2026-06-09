@@ -7,14 +7,15 @@ check de CI sobre el PR; sale con código != 0 si algo falla.
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from datetime import date
 from pathlib import Path
 
-# Marcas que NUNCA deben aparecer en el texto (encabezados/pies del PDF).
-LEAK_MARKERS = ("CÁMARA DE DIPUTADOS", "Secretaría de Servicios", " de 414")
-N_ARTICULOS = 136
+from .perfil import CPEUM, PerfilFuente
+
 MIN_BODY_CHARS = 40            # un artículo más corto que esto está truncado/vacío
+MAX_GAP_RUN = 10              # un hueco contiguo mayor delata un parser atorado
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -40,8 +41,27 @@ def parse_diff_status(status_text: str) -> tuple[list[str], list[str]]:
     return changed, deleted
 
 
+def _gap_run(claves: list[str]) -> tuple[int, tuple[int, int] | None]:
+    """Mayor corrida de números de artículo faltantes dentro del rango [min,max]."""
+    nums = sorted({int(re.match(r"\d+", c).group()) for c in claves if re.match(r"\d+", c)})
+    if not nums:
+        return 0, None
+    faltantes = [n for n in range(nums[0], nums[-1] + 1) if n not in nums]
+    if not faltantes:
+        return 0, None
+    best, run = (0, None), [faltantes[0]]
+    for n in faltantes[1:]:
+        run = run + [n] if n == run[-1] + 1 else [n]
+        if len(run) > best[0]:
+            best = (len(run), (run[0], run[-1]))
+    if len(run) > best[0]:
+        best = (len(run), (run[0], run[-1]))
+    return best
+
+
 def validate(data_repo: str, base: str | None = None,
-             max_changes: int = 20) -> tuple[bool, list[tuple[bool, str, str]]]:
+             max_changes: int = 20, *,
+             perfil: PerfilFuente = CPEUM) -> tuple[bool, list[tuple[bool, str, str]]]:
     """Corre los invariantes. Devuelve (todo_ok, [(ok, etiqueta, detalle), ...])."""
     repo = Path(data_repo)
     checks: list[tuple[bool, str, str]] = []
@@ -51,19 +71,33 @@ def validate(data_repo: str, base: str | None = None,
 
     # ---- estructurales (sobre el estado regenerado) --------------------- #
     md = sorted((repo / "articulos").glob("*.md"))
-    chk(len(md) == N_ARTICULOS, f"{N_ARTICULOS} artículos en texto", f"hay {len(md)}")
-
     idx = json.loads((repo / "metadata" / "articulos.json").read_text(encoding="utf-8"))
-    chk(len(idx["articulos"]) == N_ARTICULOS, f"{N_ARTICULOS} en el índice",
-        f"hay {len(idx['articulos'])}")
-    chk(bool(idx.get("version")), "versión del PDF registrada", str(idx.get("version")))
+
+    # Cuenta exacta solo si el perfil la conoce; si no, el check de hueco largo
+    # (parser atorado) es la red agnóstica al número de artículos del estado.
+    if perfil.n_articulos is not None:
+        n = perfil.n_articulos
+        chk(len(md) == n, f"{n} artículos en texto", f"hay {len(md)}")
+        chk(len(idx["articulos"]) == n, f"{n} en el índice", f"hay {len(idx['articulos'])}")
+
+    run_len, run_rango = _gap_run([a["clave"] for a in idx["articulos"]])
+    chk(run_len <= MAX_GAP_RUN, f"sin huecos largos (≤{MAX_GAP_RUN} seguidos)",
+        f"faltan {run_len} artículos seguidos {run_rango} — ¿parser atorado?"
+        if run_rango else "")
+
+    # La versión es federal-específica; los PDFs estatales pueden no traerla.
+    if perfil.version_re is not None:
+        chk(bool(idx.get("version")), "versión del PDF registrada", str(idx.get("version")))
 
     cuerpos = {p.name: p.read_text(encoding="utf-8") for p in md}
+    # Un artículo derogado tiene cuerpo legítimamente corto ("Derogado.").
     truncados = [n for n, t in cuerpos.items()
-                 if len(t.split("\n", 2)[-1].strip()) < MIN_BODY_CHARS]
+                 if len((c := t.split("\n", 2)[-1].strip())) < MIN_BODY_CHARS
+                 and not re.match(r"(?i)^derogad[oa]\b", c)]
     chk(not truncados, "ningún artículo vacío/truncado", ", ".join(truncados[:5]))
 
-    fugas = [n for n, t in cuerpos.items() if any(m in t for m in LEAK_MARKERS)]
+    fugas = [n for n, t in cuerpos.items()
+             if any(m in t for m in perfil.leak_markers)]
     chk(not fugas, "sin fugas de encabezado/pie de página", ", ".join(fugas[:5]))
 
     pasajes = sum(1 for l in (repo / "metadata" / "pasajes.jsonl")

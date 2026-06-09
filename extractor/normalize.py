@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import re
 
+from .perfil import CPEUM, PerfilFuente
+
 # Inicio de una nota de reforma al pie. Las notas describen el cambio y citan
 # una o más fechas DOF. Pueden ser compuestas ("... DOF 06-06-2019. Reformada y
 # recorrida (antes fracción VII) DOF 30-09-2024") y a veces tan largas que el
@@ -39,8 +41,8 @@ STRUCT_MARKER_RE = re.compile(
 SENTENCE_END_RE = re.compile(r"[.:;]$")
 
 
-def _is_reform_note(line: str) -> bool:
-    return bool(REFORM_NOTE_START_RE.match(line.strip()))
+def _is_reform_note(line: str, perfil: PerfilFuente = CPEUM) -> bool:
+    return bool(perfil.reform_note_start_re.match(line.strip()))
 
 
 def _is_struct_marker(line: str) -> bool:
@@ -51,7 +53,8 @@ def _note_is_complete(note: str) -> bool:
     return bool(NOTE_COMPLETE_RE.search(note.strip()))
 
 
-def normalize_body(body: str, heading_label: str) -> str:
+def normalize_body(body: str, heading_label: str, *,
+                   perfil: PerfilFuente = CPEUM) -> str:
     """Devuelve el cuerpo del artículo como párrafos, sin la línea de encabezado.
 
     Las notas de reforma quedan en *cursiva* como anotación al pie de su bloque.
@@ -63,7 +66,7 @@ def normalize_body(body: str, heading_label: str) -> str:
     if lines:
         first = lines[0]
         # "Artículo 4o.- La mujer..." → "La mujer..."
-        m = re.match(r"^Artículo\s+\d+\s*[oº°]?\s*(?:Bis|Ter)?\.?-?\s*", first)
+        m = perfil.article_strip_re.match(first)
         lines[0] = first[m.end():] if m else first
 
     blocks: list[str] = []
@@ -82,7 +85,7 @@ def normalize_body(body: str, heading_label: str) -> str:
             flush_buf()
             i += 1
             continue
-        if _is_reform_note(s):
+        if _is_reform_note(s, perfil):
             flush_buf()
             # Reensamblar notas envueltas: seguir uniendo líneas mientras la nota
             # no cierre en una fecha y la siguiente línea sea su continuación.
@@ -94,7 +97,7 @@ def normalize_body(body: str, heading_label: str) -> str:
                 and not _note_is_complete(note)
                 and lines[j].strip()
                 and not _is_struct_marker(lines[j])
-                and not _is_reform_note(lines[j])
+                and not _is_reform_note(lines[j], perfil)
             ):
                 note = f"{note} {lines[j].strip()}"
                 j += 1

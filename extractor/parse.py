@@ -1,69 +1,36 @@
-"""Segmentación del PDF de la CPEUM en artículos estructurados.
+"""Segmentación de un PDF legal en artículos estructurados.
 
-El PDF oficial (Cámara de Diputados) es texto digital, no escaneado.
-Cada página repite un encabezado de 4 líneas y el articulado termina
-donde empiezan los "Transitorios". Las notas de reforma vienen al pie
-de cada artículo/párrafo con el patrón "... DOF DD-MM-YYYY".
+El motor es agnóstico a la fuente: toda diferencia entre documentos (CPEUM
+federal, constituciones estatales, ...) vive en un `PerfilFuente` (ver
+`perfil.py`). El default es `CPEUM`, así que el comportamiento federal previo
+se conserva intacto.
+
+Cada PDF entrega texto digital con un encabezado repetido por página; el
+articulado termina donde empiezan los "Transitorios". Las notas de reforma
+(cuando la fuente las trae inline) van al pie de cada bloque.
 """
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 from datetime import date
 
 import pdfplumber
 
-# Líneas de encabezado que se repiten en cada página y deben eliminarse.
-HEADER_PREFIXES = (
-    "CONSTITUCIÓN POLÍTICA",
-    "CÁMARA DE DIPUTADOS",
-    "Secretaría General",
-    "Secretaría de Servicios",
-)
+from .perfil import CPEUM, PerfilFuente
 
-# Inicio de un artículo: "Artículo 1o.", "Artículo 27.", "Artículo 73.-",
-# "Artículo 4o. Bis", "Artículo 26." (solo, en su línea), etc.
-# - SIN IGNORECASE a propósito: los encabezados reales siempre llevan "Artículo"
-#   con mayúscula; las citas a mitad de oración usan "artículo" minúscula.
-# - El separador final admite fin de línea ($) para artículos cuyo encabezado va
-#   solo en su renglón (p. ej. el 26, que tiene apartados A/B debajo).
-ARTICLE_RE = re.compile(
-    r"^Artículo\s+(\d+)\s*[oº°]?\s*(Bis|Ter)?\.?-?(?:\s|$)",
-)
-
-# Encabezado de Título: "Título Primero" exacto (evita "título profesional...").
-TITULO_RE = re.compile(
-    r"^T[íi]tulo\s+(Primero|Segundo|Tercero|Cuarto|Quinto|Sexto|"
-    r"Séptimo|Octavo|Noveno|Décimo)\b.*$",
-)
-# Encabezado de Capítulo: "Capítulo I", "Capítulo II Bis", etc.
-CAPITULO_RE = re.compile(r"^Cap[íi]tulo\s+([IVXLC]+)(\s+Bis)?\s*$")
-
-# Frontera del articulado permanente: el primer encabezado de Transitorios,
-# que en el PDF oficial es "Artículos Transitorios" (los del texto original de
-# 1917) y aparece justo después del Artículo 136. Todo lo que sigue son los
-# transitorios de cada reforma y no forma parte del articulado vigente.
-TRANSITORIOS_RE = re.compile(
-    r"^[ \t]*(?:Artículos?\s+Transitorios?|ARTÍCULOS?\s+TRANSITORIOS?|TRANSITORIOS?)[ \t]*$",
-    re.MULTILINE,
-)
-
-# Fechas de reforma dentro de las notas al pie. Una cláusula DOF puede encadenar
-# varias fechas con coma: "DOF 04-12-2006, 10-06-2011". Capturamos la cláusula
-# completa y luego cada fecha, para no perder las encadenadas.
-DOF_CLAUSE_RE = re.compile(
-    r"DOF\s+(\d{2}-\d{2}-\d{4}(?:\s*,\s*\d{2}-\d{2}-\d{4})*)"
-)
-DATE_RE = re.compile(r"(\d{2})-(\d{2})-(\d{4})")
+# Globales federales conservadas por compatibilidad (apuntan al perfil CPEUM).
+ARTICLE_RE = CPEUM.article_re
+TITULO_RE = CPEUM.titulo_re
+CAPITULO_RE = CPEUM.capitulo_re
+TRANSITORIOS_RE = CPEUM.transitorios_re
+HEADER_PREFIXES = CPEUM.header_prefixes
+PAGE_FOOTER_RE = CPEUM.page_footer_re
+VERSION_RE = CPEUM.version_re
 
 
 def reform_dates_in(text: str) -> list[date]:
-    """Todas las fechas de reforma (DOF) presentes en `text`, únicas y ordenadas."""
-    dates: set[date] = set()
-    for clause in DOF_CLAUSE_RE.findall(text):
-        for d, mo, y in DATE_RE.findall(clause):
-            dates.add(date(int(y), int(mo), int(d)))
-    return sorted(dates)
+    """Fechas de reforma (DOF) en `text`. Federal; ver `PerfilFuente.fechas_de`."""
+    return CPEUM.fechas_de(text)
 
 
 @dataclass
@@ -74,6 +41,7 @@ class Article:
     capitulo: str = ""         # Capítulo al que pertenece
     body: str = ""             # texto completo del artículo
     reform_dates: list[date] = field(default_factory=list)
+    label_ordinal: str = "federal"   # estilo del ordinal en la etiqueta
 
     @property
     def key(self) -> str:
@@ -83,9 +51,13 @@ class Article:
 
     @property
     def label(self) -> str:
-        # Ordinal oficial: del 1 al 9 se escribe "1o.".."9o."; del 10 en adelante
-        # sin ordinal ("10.", "11.", ...). El sufijo Bis/Ter va al final.
-        num = f"{self.number}o." if self.number <= 9 else f"{self.number}."
+        # Ordinal según la fuente: federal "1o."/"10."; "masc" "1º"; "plano" "1".
+        if self.label_ordinal == "federal":
+            num = f"{self.number}o." if self.number <= 9 else f"{self.number}."
+        elif self.label_ordinal == "masc":
+            num = f"{self.number}º"
+        else:
+            num = f"{self.number}"
         suf = f" {self.suffix}" if self.suffix else ""
         return f"Artículo {num}{suf}"
 
@@ -94,108 +66,111 @@ class Article:
         return max(self.reform_dates) if self.reform_dates else None
 
 
-# Pie de página: "1 de 414", "414 de 414" (número de página / total).
-PAGE_FOOTER_RE = re.compile(r"^\d{1,3}\s+de\s+414$")
-
-
-def _strip_headers(page_text: str) -> str:
+def _strip_headers(page_text: str, perfil: PerfilFuente) -> str:
     lines = []
     for line in page_text.splitlines():
         s = line.strip()
-        if s.startswith(HEADER_PREFIXES) or PAGE_FOOTER_RE.match(s):
+        if perfil.header_prefixes and s.startswith(perfil.header_prefixes):
+            continue
+        if perfil.page_footer_re and perfil.page_footer_re.match(s):
             continue
         lines.append(line)
     return "\n".join(lines)
 
 
-# Versión del texto: "Últimas Reformas DOF 02-06-2026" (en la portada del PDF).
-VERSION_RE = re.compile(r"[ÚU]ltimas?\s+[Rr]eformas?\s+(?:publicadas\s+)?DOF\s+(\d{2})-(\d{2})-(\d{4})")
-
-
-def extract_clean_text(pdf_path: str) -> str:
+def extract_clean_text(pdf_path: str, *, perfil: PerfilFuente = CPEUM) -> str:
     """Devuelve el texto completo del PDF sin encabezados de página."""
     parts = []
     with pdfplumber.open(pdf_path) as pdf:
         for page in pdf.pages:
-            parts.append(_strip_headers(page.extract_text() or ""))
+            parts.append(_strip_headers(page.extract_text() or "", perfil))
     return "\n".join(parts)
 
 
-def version_date(pdf_path: str) -> date | None:
+def version_date(pdf_path: str, *, perfil: PerfilFuente = CPEUM) -> date | None:
     """Fecha de la última reforma incorporada al PDF = versión del snapshot."""
+    if perfil.version_re is None:
+        return None
     with pdfplumber.open(pdf_path) as pdf:
         head = pdf.pages[0].extract_text() or ""
-    m = VERSION_RE.search(head)
+    m = perfil.version_re.search(head)
     return date(int(m.group(3)), int(m.group(2)), int(m.group(1))) if m else None
 
 
-def _articulado_text(text: str) -> str:
+def _articulado_text(text: str, *, perfil: PerfilFuente = CPEUM) -> str:
     """Recorta el texto al articulado, cortando antes de los Transitorios."""
-    m = TRANSITORIOS_RE.search(text)
+    m = perfil.transitorios_re.search(text)
     return text[: m.start()] if m else text
 
 
-def parse(pdf_path: str) -> list[Article]:
+def parse(pdf_path: str, *, perfil: PerfilFuente = CPEUM) -> list[Article]:
     """Parsea el PDF y devuelve la lista de artículos en orden."""
-    return parse_text(extract_clean_text(pdf_path))
+    return parse_text(extract_clean_text(pdf_path, perfil=perfil), perfil=perfil)
 
 
-def parse_text(clean_text: str, start: int = 1) -> list[Article]:
+def parse_text(clean_text: str, start: int = 1, *,
+               perfil: PerfilFuente = CPEUM) -> list[Article]:
     """Segmenta texto ya limpio (sin encabezados) en artículos.
 
-    Separado de `parse` para poder probarlo con texto sintético, sin PDF.
-    `start` es el número del primer artículo esperado (1 en el documento real;
-    útil en tests para segmentar un artículo suelto, p. ej. el 4o.).
+    `start` es el número del primer artículo esperado (relevante para el gate
+    estricto). El gate del perfil decide cómo se valida la secuencia:
+    - "estricto"   (federal): solo el siguiente esperado (rechaza citas inline).
+    - "monotonico" (estatal): cualquier número mayor al último (tolera huecos
+      por derogación, que en el gate estricto detenían todo el parseo).
     """
-    text = _articulado_text(clean_text)
+    if perfil.preprocess:
+        clean_text = perfil.preprocess(clean_text)
+    text = _articulado_text(clean_text, perfil=perfil)
     lines = text.splitlines()
 
     articles: list[Article] = []
     current: Article | None = None
     cur_titulo = ""
     cur_capitulo = ""
-    expected = start  # número de artículo esperado para validar la secuencia
+    expected = start   # gate estricto: número esperado
+    last = start - 1   # gate monotonico: último número aceptado
 
     def flush(art: Article | None) -> None:
         if art is not None:
             art.body = art.body.strip()
-            art.reform_dates = reform_dates_in(art.body)
+            art.reform_dates = perfil.fechas_de(art.body)
             articles.append(art)
 
     for raw in lines:
         line = raw.rstrip()
         stripped = line.strip()
 
-        tm = TITULO_RE.match(stripped)
+        tm = perfil.titulo_re.match(stripped)
         if tm and current is None or (tm and stripped == tm.group(0)):
-            # Solo aceptamos el encabezado de Título fuera del cuerpo de un
-            # artículo para evitar capturar "Título Cuarto de esta Constitución".
             if current is None or len(stripped) < 30:
                 cur_titulo = stripped
                 continue
 
-        cm = CAPITULO_RE.match(stripped)
+        cm = perfil.capitulo_re.match(stripped)
         if cm and (current is None or len(stripped) < 25):
             cur_capitulo = stripped
             continue
 
-        am = ARTICLE_RE.match(stripped)
+        am = perfil.article_re.match(stripped)
         if am:
             num = int(am.group(1))
             suffix = (am.group(2) or "").title()
-            # Validar secuencia: solo aceptar el siguiente esperado (o un Bis/Ter
-            # del actual). Así descartamos las citas "Artículo 105" en el cuerpo.
-            is_next = num == expected
-            is_variant = current is not None and num == current.number and suffix
-            if is_next or is_variant:
+            if perfil.gate == "estricto":
+                is_accept = num == expected
+            else:
+                is_accept = num > last
+            is_variant = current is not None and num == current.number and bool(suffix)
+            if is_accept or is_variant:
                 flush(current)
                 current = Article(
                     number=num, suffix=suffix,
                     titulo=cur_titulo, capitulo=cur_capitulo,
+                    label_ordinal=perfil.label_ordinal,
                 )
                 current.body = line + "\n"
-                if is_next:
+                if is_accept:
                     expected = num + 1
+                    last = num
                 continue
 
         if current is not None:

@@ -21,7 +21,8 @@ import re
 from dataclasses import asdict, dataclass, field
 
 from .normalize import normalize_body
-from .parse import Article, reform_dates_in
+from .parse import Article
+from .perfil import CPEUM, PerfilFuente
 
 # Clasificación del marcador que abre un bloque.
 RE_FRACCION = re.compile(r"^([IVXLCDM]+)\.")     # I.  II.  XIV.
@@ -93,9 +94,10 @@ def _is_note(chunk: str) -> bool:
     return chunk.startswith("_") and chunk.endswith("_")
 
 
-def segment(art: Article) -> dict:
+def segment(art: Article, *, perfil: PerfilFuente = CPEUM) -> dict:
     """Descompone un artículo en bloques con su reforma enlazada."""
-    chunks = [c for c in normalize_body(art.body, art.label).split("\n\n") if c.strip()]
+    chunks = [c for c in normalize_body(art.body, art.label, perfil=perfil).split("\n\n")
+              if c.strip()]
 
     bloques: list[Bloque] = []
     reformas_articulo: list[Reforma] = []
@@ -106,7 +108,7 @@ def segment(art: Article) -> dict:
     for chunk in chunks:
         if _is_note(chunk):
             nota = chunk.strip("_")
-            ref = Reforma(nota=nota, fechas=[d.isoformat() for d in reform_dates_in(nota)])
+            ref = Reforma(nota=nota, fechas=[d.isoformat() for d in perfil.fechas_de(nota)])
             scope = _note_scope(nota)
             if scope == "articulo":
                 reformas_articulo.append(ref)

@@ -19,21 +19,23 @@ from pathlib import Path
 from .normalize import normalize_body
 from .parse import Article, parse, version_date
 from .passages import all_passages
+from .perfil import CPEUM, PerfilFuente
 from .segments import segment
 
-FUENTE = "Diario Oficial de la Federación — CPEUM, H. Cámara de Diputados"
+FUENTE = CPEUM.fuente   # conservado por compatibilidad; ahora vive en el perfil
 
 
-def render_markdown(art: Article) -> str:
+def render_markdown(art: Article, *, perfil: PerfilFuente = CPEUM) -> str:
     """Texto del artículo: encabezado + cuerpo en párrafos. Sin metadata.
 
     Cualquier cambio aquí proviene de un cambio en la ley; git lo detecta.
     """
-    body = normalize_body(art.body, art.label)
+    body = normalize_body(art.body, art.label, perfil=perfil)
     return f"# {art.label}\n\n{body}\n"
 
 
-def write_articles(arts: list[Article], data_repo: str) -> None:
+def write_articles(arts: list[Article], data_repo: str, *,
+                   perfil: PerfilFuente = CPEUM) -> None:
     """Capa 1: escribe solo los archivos de texto `articulos/NNN.md`."""
     art_dir = Path(data_repo) / "articulos"
     art_dir.mkdir(parents=True, exist_ok=True)
@@ -41,11 +43,13 @@ def write_articles(arts: list[Article], data_repo: str) -> None:
     for old in art_dir.glob("*.md"):
         old.unlink()
     for art in arts:
-        (art_dir / f"{art.key}.md").write_text(render_markdown(art), encoding="utf-8")
+        (art_dir / f"{art.key}.md").write_text(
+            render_markdown(art, perfil=perfil), encoding="utf-8")
 
 
 def write_metadata(
-    arts: list[Article], data_repo: str, version: str | None = None, pdf_path: str | None = None
+    arts: list[Article], data_repo: str, version: str | None = None,
+    pdf_path: str | None = None, *, perfil: PerfilFuente = CPEUM
 ) -> None:
     """Capa 3: escribe el índice derivado en `metadata/` (no toca los .md)."""
     meta_dir = Path(data_repo) / "metadata"
@@ -66,7 +70,7 @@ def write_metadata(
         }
         for art in arts
     ]
-    index_doc = {"fuente": FUENTE, "version": version, "articulos": index}
+    index_doc = {"fuente": perfil.fuente, "version": version, "articulos": index}
     (meta_dir / "articulos.json").write_text(
         json.dumps(index_doc, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
@@ -88,11 +92,12 @@ def write_metadata(
         old.unlink()
     for art in arts:
         (seg_dir / f"{art.key}.json").write_text(
-            json.dumps(segment(art), ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+            json.dumps(segment(art, perfil=perfil), ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8"
         )
 
     # Índice plano de pasajes, listo para ingesta de un RAG (un JSON por línea).
-    pasajes = all_passages(arts, version)
+    pasajes = all_passages(arts, version, perfil=perfil)
     # Coordenadas en el PDF (página + rects de resaltado), best-effort.
     if pdf_path:
         from .locate import annotate
@@ -102,17 +107,19 @@ def write_metadata(
             fh.write(json.dumps(p, ensure_ascii=False) + "\n")
 
 
-def build(pdf_path: str, data_repo: str, what: str = "all") -> list[Article]:
+def build(pdf_path: str, data_repo: str, what: str = "all", *,
+          perfil: PerfilFuente = CPEUM) -> list[Article]:
     """Parsea el PDF y materializa las capas pedidas. Devuelve los artículos.
 
     what: "all" (texto + metadata) | "text" (solo capa 1) | "metadata" (solo capa 3).
     """
-    arts = parse(pdf_path)
+    arts = parse(pdf_path, perfil=perfil)
     if what in ("all", "text"):
-        write_articles(arts, data_repo)
+        write_articles(arts, data_repo, perfil=perfil)
     if what in ("all", "metadata"):
-        version = version_date(pdf_path)
+        version = version_date(pdf_path, perfil=perfil)
         write_metadata(
-            arts, data_repo, version=version.isoformat() if version else None, pdf_path=pdf_path
+            arts, data_repo, version=version.isoformat() if version else None,
+            pdf_path=pdf_path, perfil=perfil
         )
     return arts

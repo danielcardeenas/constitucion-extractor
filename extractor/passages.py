@@ -19,11 +19,13 @@ from __future__ import annotations
 import re
 
 from .parse import Article
+from .perfil import CPEUM, PerfilFuente
 from .segments import segment
 
-FUENTE = "Diario Oficial de la Federación — CPEUM, H. Cámara de Diputados"
-URL_FUENTE = "https://www.diputados.gob.mx/LeyesBiblio/pdf/CPEUM.pdf"
-TEXTO_ORIGINAL = "1917-02-05"   # fecha del texto original para bloques sin reforma
+# Constantes federales conservadas por compatibilidad (ahora viven en el perfil).
+FUENTE = CPEUM.fuente
+URL_FUENTE = CPEUM.url_fuente
+TEXTO_ORIGINAL = CPEUM.texto_original   # fecha del texto original sin reforma
 
 _PARRAFO_ID = re.compile(r"\.p(\d+)")
 
@@ -55,17 +57,19 @@ def _bloque_fechas(b: dict) -> list[str]:
     return fechas
 
 
-def passages_for(art: Article, version: str | None) -> list[dict]:
+def passages_for(art: Article, version: str | None, *,
+                 perfil: PerfilFuente = CPEUM) -> list[dict]:
     """Pasajes (uno por bloque) de un artículo."""
-    doc = segment(art)
+    doc = segment(art, perfil=perfil)
     out = []
     for b in doc["bloques"]:
         fechas = _bloque_fechas(b)
-        vigente_desde = fechas[-1] if fechas else TEXTO_ORIGINAL
+        vigente_desde = fechas[-1] if fechas else perfil.texto_original
         cita = _cita(doc["etiqueta"], b)
         ctx = f"{b['ruta']} | {doc['titulo']}".strip(" |")
         out.append({
-            "id": b["id"],
+            "id": perfil.prefijo_id(b["id"]),
+            "ambito": perfil.ambito,          # partición del corpus (federal/jalisco/…)
             "cita": cita,
             "ruta": b["ruta"],
             "articulo": art.number,
@@ -80,12 +84,13 @@ def passages_for(art: Article, version: str | None) -> list[dict]:
             "vigente_desde": vigente_desde,
             "vigente_hasta": None,            # forward-only: null = vigente
             "version": version,
-            "fuente": FUENTE,
-            "url_fuente": URL_FUENTE,
+            "fuente": perfil.fuente,
+            "url_fuente": perfil.url_fuente,
             "archivo_texto": f"articulos/{art.key}.md",
         })
     return out
 
 
-def all_passages(arts: list[Article], version: str | None) -> list[dict]:
-    return [p for art in arts for p in passages_for(art, version)]
+def all_passages(arts: list[Article], version: str | None, *,
+                 perfil: PerfilFuente = CPEUM) -> list[dict]:
+    return [p for art in arts for p in passages_for(art, version, perfil=perfil)]

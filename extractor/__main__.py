@@ -10,11 +10,19 @@ import argparse
 import sys
 
 from .build import build
+from .fuentes import FUENTES, perfil_por_nombre
 from .parse import parse
 
 
+def _add_perfil(sp: argparse.ArgumentParser) -> None:
+    """Flag común: qué fuente parsear (federal por defecto)."""
+    sp.add_argument("--perfil", choices=sorted(FUENTES), default="cpeum",
+                    help="Fuente a procesar (default: cpeum). Ej.: jalisco, cdmx")
+
+
 def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(prog="extractor", description="Extractor de la CPEUM a Markdown")
+    p = argparse.ArgumentParser(prog="extractor",
+                                description="Extractor de constituciones (federal + estatales) a Markdown")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     b = sub.add_parser("build", help="Genera el texto (capa 1) y la metadata (capa 3)")
@@ -22,15 +30,18 @@ def main(argv: list[str] | None = None) -> int:
     b.add_argument("--out", required=True, help="Ruta al repo de datos (constitucion-mexicana)")
     b.add_argument("--only", choices=["all", "text", "metadata"], default="all",
                    help="Qué capa escribir: all (default), text, metadata")
+    _add_perfil(b)
 
     idx = sub.add_parser("index", help="Regenera SOLO la metadata derivada (no toca los .md)")
     idx.add_argument("--pdf", default="CPEUM.pdf")
     idx.add_argument("--out", required=True)
+    _add_perfil(idx)
 
     e = sub.add_parser("enriquecer",
                        help="Genera la capa de enriquecimiento por LLM (metadata/generado/)")
     e.add_argument("--pdf", default="CPEUM.pdf")
     e.add_argument("--out", required=True)
+    _add_perfil(e)
     e.add_argument("--proveedor", choices=["anthropic", "openai"], default="openai",
                    help="Proveedor del LLM (default: openai)")
     e.add_argument("--modelo", default=None,
@@ -45,21 +56,26 @@ def main(argv: list[str] | None = None) -> int:
                    help="Ref git base para checks de diff (p.ej. origin/main)")
     v.add_argument("--max-cambios", type=int, default=20,
                    help="Máximo de artículos que puede tocar una reforma legítima")
+    _add_perfil(v)
 
     s = sub.add_parser("stats", help="Imprime estadísticas del parseo (no escribe)")
     s.add_argument("--pdf", default="CPEUM.pdf")
+    _add_perfil(s)
 
     args = p.parse_args(argv)
 
     if args.cmd == "validar":
         from .validate import format_report, validate
-        ok, checks = validate(args.out, base=args.base, max_changes=args.max_cambios)
+        perfil = perfil_por_nombre(args.perfil)
+        ok, checks = validate(args.out, base=args.base, max_changes=args.max_cambios,
+                              perfil=perfil)
         print(format_report(checks))
         print("\n" + ("✅ Invariantes OK" if ok else "❌ Invariantes ROTOS — no mergear"))
         return 0 if ok else 1
 
     if args.cmd == "build":
-        arts = build(args.pdf, args.out, what=args.only)
+        perfil = perfil_por_nombre(args.perfil)
+        arts = build(args.pdf, args.out, what=args.only, perfil=perfil)
         if args.only == "metadata":
             print(f"✓ metadata de {len(arts)} artículos en {args.out}/metadata/")
         else:
@@ -67,14 +83,16 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.cmd == "index":
-        arts = build(args.pdf, args.out, what="metadata")
+        perfil = perfil_por_nombre(args.perfil)
+        arts = build(args.pdf, args.out, what="metadata", perfil=perfil)
         print(f"✓ metadata regenerada para {len(arts)} artículos (sin tocar los .md)")
         return 0
 
     if args.cmd == "enriquecer":
         from .enrich import DEFAULT_MODELS, caller_for, run_enrichment
+        perfil = perfil_por_nombre(args.perfil)
         modelo = args.modelo or DEFAULT_MODELS[args.proveedor]
-        arts = parse(args.pdf)
+        arts = parse(args.pdf, perfil=perfil)
         call = caller_for(args.proveedor, modelo)
         stats = run_enrichment(arts, args.out, call, f"{args.proveedor}:{modelo}", force=args.force)
         print(f"✓ enriquecimiento ({args.proveedor}:{modelo}): {stats['generados']} generados, "
@@ -84,11 +102,14 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.cmd == "stats":
-        arts = parse(args.pdf)
+        perfil = perfil_por_nombre(args.perfil)
+        arts = parse(args.pdf, perfil=perfil)
         nums = [a.number for a in arts]
-        gaps = [n for n in range(1, 137) if n not in nums]
-        print(f"Artículos: {len(arts)} (rango {min(nums)}–{max(nums)})")
-        print(f"Huecos en 1–136: {gaps or 'ninguno'}")
+        lo, hi = (min(nums), max(nums)) if nums else (0, 0)
+        gaps = [n for n in range(lo, hi + 1) if n not in nums]
+        print(f"Perfil: {perfil.ambito} ({perfil.nombre})")
+        print(f"Artículos: {len(arts)} (rango {lo}–{hi})")
+        print(f"Huecos en {lo}–{hi}: {gaps or 'ninguno'}")
         print(f"Con sufijo: {[a.label for a in arts if a.suffix] or 'ninguno'}")
         total_reformas = sum(len(a.reform_dates) for a in arts)
         print(f"Notas de reforma totales: {total_reformas}")
