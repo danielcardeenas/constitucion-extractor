@@ -32,6 +32,8 @@ def main(argv: list[str] | None = None) -> int:
                    help="Qué capa escribir: all (default), text, metadata")
     b.add_argument("--version", default=None,
                    help="Fecha de versión YYYY-MM-DD (override; si el PDF no la trae)")
+    b.add_argument("--url-fuente", default=None,
+                   help="URL del PDF vigente (override; la del perfil puede rotar)")
     _add_perfil(b)
 
     idx = sub.add_parser("index", help="Regenera SOLO la metadata derivada (no toca los .md)")
@@ -39,6 +41,8 @@ def main(argv: list[str] | None = None) -> int:
     idx.add_argument("--out", required=True)
     idx.add_argument("--version", default=None,
                      help="Fecha de versión YYYY-MM-DD (override; si el PDF no la trae)")
+    idx.add_argument("--url-fuente", default=None,
+                     help="URL del PDF vigente (override; la del perfil puede rotar)")
     _add_perfil(idx)
 
     e = sub.add_parser("enriquecer",
@@ -79,7 +83,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd == "build":
         perfil = perfil_por_nombre(args.perfil)
-        arts = build(args.pdf, args.out, what=args.only, perfil=perfil, version=args.version)
+        arts = build(args.pdf, args.out, what=args.only, perfil=perfil,
+                     version=args.version, url_fuente=args.url_fuente)
         if args.only == "metadata":
             print(f"✓ metadata de {len(arts)} artículos en {args.out}/metadata/")
         else:
@@ -88,7 +93,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd == "index":
         perfil = perfil_por_nombre(args.perfil)
-        arts = build(args.pdf, args.out, what="metadata", perfil=perfil, version=args.version)
+        arts = build(args.pdf, args.out, what="metadata", perfil=perfil,
+                     version=args.version, url_fuente=args.url_fuente)
         print(f"✓ metadata regenerada para {len(arts)} artículos (sin tocar los .md)")
         return 0
 

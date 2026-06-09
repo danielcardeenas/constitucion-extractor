@@ -14,6 +14,7 @@ texto.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 from .normalize import normalize_body
@@ -108,13 +109,18 @@ def write_metadata(
 
 
 def build(pdf_path: str, data_repo: str, what: str = "all", *,
-          perfil: PerfilFuente = CPEUM, version: str | None = None) -> list[Article]:
+          perfil: PerfilFuente = CPEUM, version: str | None = None,
+          url_fuente: str | None = None) -> list[Article]:
     """Parsea el PDF y materializa las capas pedidas. Devuelve los artículos.
 
     what: "all" (texto + metadata) | "text" (solo capa 1) | "metadata" (solo capa 3).
     version: override explícito (YYYY-MM-DD) cuando el PDF no trae la fecha en su
     portada (p.ej. Jalisco, cuya versión va en el nombre del archivo).
+    url_fuente: override de la URL del PDF vigente (la del perfil puede quedar
+    obsoleta cuando la fuente rota el nombre del archivo). Va a la cita.
     """
+    if url_fuente:
+        perfil = replace(perfil, url_fuente=url_fuente)
     arts = parse(pdf_path, perfil=perfil)
     if what in ("all", "text"):
         write_articles(arts, data_repo, perfil=perfil)
