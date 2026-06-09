@@ -89,11 +89,13 @@ def extract_clean_text(pdf_path: str, *, perfil: PerfilFuente = CPEUM) -> str:
 
 def version_date(pdf_path: str, *, perfil: PerfilFuente = CPEUM) -> date | None:
     """Fecha de la última reforma incorporada al PDF = versión del snapshot."""
-    if perfil.version_re is None:
+    if perfil.version_de is None and perfil.version_re is None:
         return None
     with pdfplumber.open(pdf_path) as pdf:
         head = pdf.pages[0].extract_text() or ""
-    m = perfil.version_re.search(head)
+    if perfil.version_de is not None:        # parser propio de la fuente (estatal)
+        return perfil.version_de(head)
+    m = perfil.version_re.search(head)       # federal: DOF DD-MM-YYYY
     return date(int(m.group(3)), int(m.group(2)), int(m.group(1))) if m else None
 
 

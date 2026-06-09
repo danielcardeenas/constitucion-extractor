@@ -108,18 +108,20 @@ def write_metadata(
 
 
 def build(pdf_path: str, data_repo: str, what: str = "all", *,
-          perfil: PerfilFuente = CPEUM) -> list[Article]:
+          perfil: PerfilFuente = CPEUM, version: str | None = None) -> list[Article]:
     """Parsea el PDF y materializa las capas pedidas. Devuelve los artículos.
 
     what: "all" (texto + metadata) | "text" (solo capa 1) | "metadata" (solo capa 3).
+    version: override explícito (YYYY-MM-DD) cuando el PDF no trae la fecha en su
+    portada (p.ej. Jalisco, cuya versión va en el nombre del archivo).
     """
     arts = parse(pdf_path, perfil=perfil)
     if what in ("all", "text"):
         write_articles(arts, data_repo, perfil=perfil)
     if what in ("all", "metadata"):
-        version = version_date(pdf_path, perfil=perfil)
-        write_metadata(
-            arts, data_repo, version=version.isoformat() if version else None,
-            pdf_path=pdf_path, perfil=perfil
-        )
+        if version is None:
+            v = version_date(pdf_path, perfil=perfil)
+            version = v.isoformat() if v else None
+        write_metadata(arts, data_repo, version=version,
+                       pdf_path=pdf_path, perfil=perfil)
     return arts

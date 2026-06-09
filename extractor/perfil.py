@@ -60,6 +60,17 @@ def sin_fechas(text: str) -> list[date]:
     return []
 
 
+def version_ultima_reforma(text: str) -> Optional[date]:
+    """Versión del PDF = fecha de 'Última reforma publicada ... el DD de mes de
+    YYYY' (portada de los periódicos/gacetas estatales, p.ej. CDMX)."""
+    m = re.search(
+        r"[ÚU]ltima\s+reforma[^\n]*?(\d{1,2})\s+de\s+(" + "|".join(_MESES) +
+        r")\s+de\s+(\d{4})", text, re.IGNORECASE)
+    if not m:
+        return None
+    return date(int(m.group(3)), _MESES[m.group(2).lower()], int(m.group(1)))
+
+
 @dataclass(frozen=True)
 class PerfilFuente:
     """Todo lo específico de una fuente. Los defaults son federales (CPEUM)."""
@@ -88,6 +99,10 @@ class PerfilFuente:
     # --- reformas (capa 3, best-effort) -----------------------------------
     fechas_de: Callable[[str], list[date]]
     reform_note_start_re: re.Pattern   # detecta una nota de reforma al pie
+
+    # Versión del PDF a partir de su portada (None → se usa version_re numérico,
+    # o se pasa explícita por CLI si la fuente no la trae). Ver `version_date`.
+    version_de: Optional[Callable[[str], Optional[date]]] = None
 
     # --- gate de validación (validate.py) ---------------------------------
     n_articulos: Optional[int] = None       # cuenta esperada (None = no exigir)
@@ -166,6 +181,7 @@ def perfil_estatal(
     n_articulos: Optional[int] = None,
     page_footer_re: Optional[re.Pattern] = None,   # override (Nivel 1) si el PDF
                                                    # trae números de página sueltos
+    version_de: Optional[Callable[[str], Optional[date]]] = None,
     preprocess: Optional[Callable[[str], str]] = None,
 ) -> PerfilFuente:
     """Construye un perfil estatal genérico (Nivel 1).
@@ -202,6 +218,7 @@ def perfil_estatal(
         page_footer_re=page_footer_re,
         fechas_de=fechas_de,
         reform_note_start_re=reform_note_start_re,
+        version_de=version_de,
         n_articulos=n_articulos,
         # si el encabezado repetido se cuela en el cuerpo, que el gate lo atrape
         leak_markers=header_prefixes,

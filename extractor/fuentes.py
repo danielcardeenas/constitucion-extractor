@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 
-from .perfil import CPEUM, PerfilFuente, perfil_estatal
+from .perfil import CPEUM, PerfilFuente, perfil_estatal, version_ultima_reforma
 
 JALISCO = perfil_estatal(
     ambito="jalisco",
@@ -34,6 +34,7 @@ CDMX = perfil_estatal(
     texto_original="2017-02-05",
     header_prefixes=("CONSTITUCIÓN POLÍTICA DE LA CIUDAD",),
     label_ordinal="plano",         # "Artículo 1" (sin ordinal)
+    version_de=version_ultima_reforma,   # portada: "Última reforma ... el DD de mes de YYYY"
     # Excepción Nivel 1: el genérico ^TRANSITORIOS$ no corta en CDMX y el art. 71
     # se traga todo el cierre (transitorios + promulgación + historial de
     # decretos). El articulado termina en el heading "ARTÍCULOS TRANSITORIOS"
