@@ -34,10 +34,17 @@ CDMX = perfil_estatal(
     texto_original="2017-02-05",
     header_prefixes=("CONSTITUCIÓN POLÍTICA DE LA CIUDAD",),
     label_ordinal="plano",         # "Artículo 1" (sin ordinal)
-    # Excepción Nivel 1: en CDMX los transitorios nunca van solos en su línea,
-    # son "TRANSITORIOS DEL DECRETO POR EL QUE SE EXPIDE...". El genérico
-    # ^TRANSITORIOS$ no corta y el art. 71 se traga todo el decreto final.
-    transitorios_re=re.compile(r"^TR[AÁ]NSITORIOS\s+DEL\s+DECRETO\b", re.MULTILINE),
+    # Excepción Nivel 1: el genérico ^TRANSITORIOS$ no corta en CDMX y el art. 71
+    # se traga todo el cierre (transitorios + promulgación + historial de
+    # decretos). El articulado termina en el heading "ARTÍCULOS TRANSITORIOS"
+    # (transitorios originales de la Constitución). Se admite también la variante
+    # "TRANSITORIOS DEL DECRETO POR EL QUE SE EXPIDE..." de otras ediciones.
+    transitorios_re=re.compile(
+        r"^(?:ART[ÍI]CULOS?\s+TRANSITORIOS\s*$|TR[AÁ]NSITORIOS\s+DEL\s+DECRETO\b)",
+        re.MULTILINE),
+    # El PDF vigente trae el número de página suelto en su propia línea ("3").
+    # Los ítems del articulado llevan punto ("3."), así que solo-dígitos = página.
+    page_footer_re=re.compile(r"\d{1,3}$"),
 )
 
 # Ámbito → perfil. La clave es lo que se pasa por CLI con --perfil.

@@ -164,6 +164,8 @@ def perfil_estatal(
     fechas_de: Callable[[str], list[date]] = fechas_largas,
     reform_note_start_re: re.Pattern = _NUNCA_RE,
     n_articulos: Optional[int] = None,
+    page_footer_re: Optional[re.Pattern] = None,   # override (Nivel 1) si el PDF
+                                                   # trae números de página sueltos
     preprocess: Optional[Callable[[str], str]] = None,
 ) -> PerfilFuente:
     """Construye un perfil estatal genérico (Nivel 1).
@@ -197,7 +199,7 @@ def perfil_estatal(
             re.MULTILINE | re.IGNORECASE),
         version_re=version_re,
         header_prefixes=header_prefixes,
-        page_footer_re=None,
+        page_footer_re=page_footer_re,
         fechas_de=fechas_de,
         reform_note_start_re=reform_note_start_re,
         n_articulos=n_articulos,
