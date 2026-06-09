@@ -30,11 +30,18 @@ _UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
 
 # estado → cómo encontrar su PDF vigente.
 RESOLVERS: dict[str, dict] = {
-    # CDMX: el Congreso publica el texto vigente en una URL de nombre estable.
+    # CDMX: vigilancia MANUAL por ahora.
+    # - El PDF del piloto salió de una URL hash (media/documentos/<hash>.pdf) que
+    #   rota en cada subida → no sirve como fuente durable.
+    # - Sí existe una URL de nombre estable (`url_estable`) y de hecho es más
+    #   limpia (sin las fugas de encabezado del piloto), PERO el perfil `cdmx`
+    #   aún mis-segmenta su numeración "1. 2. 3." (deja un artículo truncado que
+    #   el gate `validar` rechaza). Hasta afinar el perfil y re-basar el texto,
+    #   CDMX no se auto-vigila para no abrir PRs en rojo cada semana.
     "cdmx": {
-        "tipo": "directo",
-        "url": ("https://www.congresocdmx.gob.mx/archivos/legislativas/"
-                "constitucion_politica_de_la_ciudad_de_mexico.pdf"),
+        "tipo": "manual",
+        "url_estable": ("https://www.congresocdmx.gob.mx/archivos/legislativas/"
+                        "constitucion_politica_de_la_ciudad_de_mexico.pdf"),
     },
     # Jalisco: el PDF lleva la fecha (DDMMYY) en el nombre y rota en cada
     # reforma. El "Listado Completo" de la biblioteca virtual enlaza al vigente.
@@ -84,6 +91,8 @@ def resolver(estado: str) -> str:
     if cfg is None:
         raise SystemExit(
             f"estado desconocido: {estado!r}. Soportados: {', '.join(RESOLVERS)}")
+    if cfg["tipo"] == "manual":
+        return ""                       # sin URL automática → el watcher lo salta
     if cfg["tipo"] == "directo":
         return cfg["url"]
     if cfg["tipo"] == "indice":
