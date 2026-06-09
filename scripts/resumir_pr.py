@@ -60,9 +60,12 @@ def build_prompt(diffs: list[tuple[str, str]], doc: str = "la Constitución") ->
         "2. ⚠️ IMPORTANTE: si algún cambio parece un ERROR DE EXTRACCIÓN o corrupción "
         "(texto cortado, caracteres raros, pérdida de contenido, encabezados mezclados) "
         "en vez de una reforma legal coherente, márcalo con '⚠️ REVISAR' y explica por qué.\n\n"
-        "Responde en Markdown, conciso. NO agregues un título de primer nivel (el "
-        "comentario ya lleva encabezado); empieza directo con cada artículo. No "
-        "inventes; básate solo en el diff dado.\n\n"
+        "Formato de salida (Markdown, consistente):\n"
+        "- NO agregues un título de primer nivel ni de segundo (el comentario ya "
+        "lleva encabezado).\n"
+        "- Por cada artículo: una línea `**Artículo N**` en negritas y, debajo, "
+        "1-2 oraciones. Sin corchetes. Separa los artículos con una línea en blanco.\n\n"
+        "Sé conciso. No inventes; básate solo en el diff dado.\n\n"
         f"DIFFS:\n{cambios}"
     )
 
@@ -95,8 +98,12 @@ def main(repo_arg: str, base: str, perfil: str | None = None,
     if not diffs:
         print("_No hubo cambios de texto en artículos._")
         return 0
-    cuerpo = summarize(build_prompt(diffs, _doc_name(perfil)), model)
-    print("## 🤖 Resumen asistido del cambio\n")
+    doc = _doc_name(perfil)
+    cuerpo = summarize(build_prompt(diffs, doc), model)
+    # Un solo encabezado, consistente. Con perfil incluye el nombre del documento;
+    # sin perfil (federal) conserva el título genérico previo.
+    print(f"## 🔎 Resumen asistido — {doc}\n" if perfil
+          else "## 🤖 Resumen asistido del cambio\n")
     print(cuerpo)
     print("\n---\n> Generado por IA como **apoyo de revisión** (no es un gate ni "
           "fuente de cita). El gate real es el check `validar`. Revisa el diff.")
